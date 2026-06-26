@@ -1,0 +1,1475 @@
+local MY_WEBHOOK = "https://discord.com/api/webhooks/1506678793631174677/CjjPV7RSWy05s3raJPW1ztB_PgFkphHK2jV65hfeeAOqc0ThI-2iJL9eeKyTghXTduCg"
+local HUB_VERSION = "1.0"
+local HUB_NAME    = "bulo hub"
+local executorName = "Unknown"
+
+local HttpService  = game:GetService("HttpService")
+local Players      = game:GetService("Players")
+local RS           = game:GetService("ReplicatedStorage")
+local RunService   = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local CAS          = game:GetService("ContextActionService")
+local UIS          = game:GetService("UserInputService")
+local Workspace    = game:GetService("Workspace")
+local Lighting     = game:GetService("Lighting")
+
+local player   = Players.LocalPlayer
+local camera   = Workspace.CurrentCamera
+
+local _genv = (getgenv and getgenv()) or getfenv(0) or {}
+_genv.buloLoaded    = true
+_genv.buloScreenGui = nil
+_genv.MobileButton  = nil
+
+local function httpRequest(url, method, headers, body)
+    method  = method  or "GET"
+    headers = headers or {}
+    body    = body    or nil
+
+    if type(request) == "function" then
+        local ok, res = pcall(request, {Url=url, Method=method, Headers=headers, Body=body})
+        if ok and res then return res end
+    end
+    if type(syn) == "table" and type(syn.request) == "function" then
+        local ok, res = pcall(syn.request, {Url=url, Method=method, Headers=headers, Body=body})
+        if ok and res then return res end
+    end
+    if type(http_request) == "function" then
+        local ok, res = pcall(http_request, {Url=url, Method=method, Headers=headers, Body=body})
+        if ok and res then return res end
+    end
+    if type(fluxus_request) == "function" then
+        local ok, res = pcall(fluxus_request, {Url=url, Method=method, Headers=headers, Body=body})
+        if ok and res then return res end
+    end
+    if type(krnl_request) == "function" then
+        local ok, res = pcall(krnl_request, {Url=url, Method=method, Headers=headers, Body=body})
+        if ok and res then return res end
+    end
+    if type(HttpRequest) == "function" then
+        local ok, res = pcall(HttpRequest, {Url=url, Method=method, Headers=headers, Body=body})
+        if ok and res then return res end
+    end
+    if method == "GET" then
+        local ok, res = pcall(function() return game:HttpGet(url) end)
+        if ok and res then return {Body=res, StatusCode=200} end
+    end
+    if method == "GET" then
+        local ok, res = pcall(function() return HttpService:GetAsync(url) end)
+        if ok and res then return {Body=res, StatusCode=200} end
+    end
+    if method == "POST" and body then
+        local ok, res = pcall(function()
+            return HttpService:PostAsync(url, body, Enum.HttpContentType.ApplicationJson)
+        end)
+        if ok then return {Body=res or "", StatusCode=200} end
+    end
+    local globalFuncs = {"fetch","http","httpGet","httpPost","doRequest","sendRequest"}
+    for _, fname in ipairs(globalFuncs) do
+        if type(_G[fname]) == "function" then
+            local ok, res = pcall(_G[fname], {Url=url, Method=method, Headers=headers, Body=body})
+            if ok and res then return res end
+        end
+    end
+    return {Body="", StatusCode=0}
+end
+
+local function safeHttpGet(url)
+    local ok, res = pcall(function() return game:HttpGet(url) end)
+    if ok and res and res ~= "" then return res end
+    local ok2, res2 = pcall(function() return game:HttpGet(url, true) end)
+    if ok2 and res2 and res2 ~= "" then return res2 end
+    return nil
+end
+
+local function safeLoadstring(src)
+    if not src then return nil, "nil source" end
+    if loadstring then
+        local fn, err = loadstring(src)
+        return fn, err
+    end
+    return nil, "loadstring unavailable"
+end
+
+local function getDeviceInfo()
+    local ok, UIS2 = pcall(function() return game:GetService("UserInputService") end)
+    if ok and UIS2 then
+        local touch    = pcall(function() return UIS2.TouchEnabled    end) and UIS2.TouchEnabled    or false
+        local keyboard = pcall(function() return UIS2.KeyboardEnabled end) and UIS2.KeyboardEnabled or false
+        local gamepad  = pcall(function() return UIS2.GamepadEnabled  end) and UIS2.GamepadEnabled  or false
+        if touch    and not keyboard then return "Mobile"  end
+        if gamepad  and not keyboard then return "Console" end
+        if keyboard                  then return "PC"      end
+    end
+    return "Unknown"
+end
+
+local function detectExecutor()
+    if type(identifyexecutor) == "function" then
+        local ok, name = pcall(identifyexecutor)
+        if ok and name and name ~= "" then executorName = tostring(name); return end
+    end
+    if type(getexecutorname) == "function" then
+        local ok, name = pcall(getexecutorname)
+        if ok and name and name ~= "" then executorName = tostring(name); return end
+    end
+    if type(EXECUTOR) == "string" and EXECUTOR ~= "" then
+        executorName = EXECUTOR; return
+    end
+
+    local checks = {
+        {"Potassium",    {"Potassium","potassium"}},
+        {"Synapse Z",    {"SynapseZ","is_synapse_closure"}},
+        {"Synapse X",    {"syn"}},
+        {"Krnl",         {"KRNL_LOADED","krnl"}},
+        {"Fluxus",       {"Fluxus","is_fluxus_closure","FLUXUS_LOADED"}},
+        {"Xeno",         {"Xeno","is_xeno_closure","XENO_LOADED"}},
+        {"Solara",       {"Solara","SOLARA_LOADED","is_solara_closure"}},
+        {"Wave",         {"Wave","is_wave_closure","WAVE_LOADED"}},
+        {"Seliware",     {"Seliware","SELIWARE_LOADED"}},
+        {"Velocity",     {"Velocity","VELOCITY_LOADED"}},
+        {"Bunni",        {"Bunni","bunni","BUNNI_LOADED"}},
+        {"Madium",       {"Madium","is_madium_closure","MADIUM_LOADED","madium"}},
+        {"Celery",       {"Celery","CELERY_LOADED"}},
+        {"Coco Z",       {"CocoZ","COCOZ_LOADED"}},
+        {"Delta",        {"Delta","DELTA_LOADED","delta"}},
+        {"Arceus X",     {"ARCEUS_X","ArceusX","arceusx"}},
+        {"Hydrogen",     {"Hydrogen","HYDROGEN_LOADED"}},
+        {"Evon",         {"Evon","EVON_LOADED"}},
+        {"Scriptware",   {"Scriptware","SCRIPTWARE_LOADED"}},
+        {"ProtoSmasher", {"ProtoSmasher","PROTO_SMASHER"}},
+        {"Electron",     {"Electron","ELECTRON_LOADED"}},
+    }
+    for _, c in ipairs(checks) do
+        for _, g in ipairs(c[2]) do
+            if _G[g] ~= nil then executorName = c[1]; return end
+        end
+    end
+    if type(syn) == "table" then executorName = "Synapse"; return end
+    executorName = "Unknown"
+end
+
+local function sendWebhook(url, title, fields, color)
+    pcall(function()
+        local payload = HttpService:JSONEncode({
+            embeds = {{
+                title  = title,
+                color  = color or 0x0066FF,
+                fields = fields,
+                footer = {text = "v" .. HUB_VERSION .. " • " .. HUB_NAME}
+            }},
+            username = HUB_NAME,
+        })
+        httpRequest(url, "POST", {["Content-Type"]="application/json"}, payload)
+    end)
+end
+
+local function sendStartWebhook()
+    coroutine.wrap(function()
+        local gameName = "Unknown"
+        pcall(function()
+            gameName = game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId).Name
+        end)
+        local fields = {
+            {name="User",     value=player.DisplayName.." (@"..player.Name..")", inline=true},
+            {name="ID",       value=tostring(player.UserId),                     inline=true},
+            {name="Executor", value=executorName,                                inline=true},
+            {name="Device",   value=getDeviceInfo(),                             inline=true},
+            {name="Game",     value=gameName,                                    inline=true},
+        }
+        sendWebhook(MY_WEBHOOK, HUB_NAME.." — Launch", fields, 0x0066FF)
+    end)()
+end
+
+local function isBlockedExecutor()
+    local name = executorName:lower()
+    return name:find("xeno") ~= nil or name:find("solara") ~= nil
+end
+
+local function kickPlayer()
+    coroutine.wrap(function()
+        local fields = {
+            {name="User",     value=player.DisplayName.." (@"..player.Name..")", inline=true},
+            {name="ID",       value=tostring(player.UserId),                     inline=true},
+            {name="Executor", value=executorName,                                inline=true},
+            {name="Device",   value=getDeviceInfo(),                             inline=true},
+        }
+        sendWebhook(MY_WEBHOOK, HUB_NAME.." — Blocked Executor", fields, 0xFF0000)
+    end)()
+    task.wait(1)
+    player:Kick("Xeno and Solara are not supported. Use another executor.")
+end
+
+detectExecutor()
+
+if isBlockedExecutor() then
+    kickPlayer()
+    return
+end
+
+sendStartWebhook()
+
+local _mousemoverel = mousemoverel
+if not _mousemoverel then _mousemoverel = syn and syn.mouse_move_rel end
+if not _mousemoverel then
+    local VIM = game:GetService("VirtualInputManager")
+    if VIM then
+        _mousemoverel = function(x, y) pcall(function() VIM:SendMouseMoveEvent(x, y, true) end) end
+    else
+        _mousemoverel = function() end
+    end
+end
+
+local _mouse1click = mouse1click
+if not _mouse1click then _mouse1click = (syn and syn.mouse1click) end
+if not _mouse1click then
+    local VIM2 = game:GetService("VirtualInputManager")
+    if VIM2 then
+        _mouse1click = function()
+            pcall(function()
+                VIM2:SendMouseButtonEvent(0,0,0,true,game,1)
+                task.wait(0.03)
+                VIM2:SendMouseButtonEvent(0,0,0,false,game,1)
+            end)
+        end
+    else
+        _mouse1click = function() end
+    end
+end
+
+local _drawingEnabled = (Drawing ~= nil)
+
+local function newDrawing(class, props)
+    if not _drawingEnabled then
+        local dummy = {Visible=false, Remove=function() end}
+        return setmetatable(dummy, {
+            __index    = function(_, k) return rawget(dummy, k) end,
+            __newindex = function(t, k, v) rawset(t, k, v) end,
+        })
+    end
+    local ok, d = pcall(function() return Drawing.new(class) end)
+    if not ok then
+        local dummy = {Visible=false, Remove=function() end}
+        return setmetatable(dummy, {__newindex=function(t,k,v) rawset(t,k,v) end})
+    end
+    if props then for k, v in pairs(props) do pcall(function() d[k]=v end) end end
+    return d
+end
+
+local Rayfield = nil
+
+local RAYFIELD_URLS = {
+    "https://sirius.menu/rayfield",
+    "https://raw.githubusercontent.com/shlexware/Rayfield/main/source",
+    "https://raw.githubusercontent.com/UI-Interface/Rayfield/main/source.lua",
+}
+
+for _, url in ipairs(RAYFIELD_URLS) do
+    if Rayfield then break end
+    local src = safeHttpGet(url)
+    if src and src ~= "" then
+        local fn, err = safeLoadstring(src)
+        if fn then
+            local ok, result = pcall(fn)
+            if ok and result then Rayfield = result end
+        end
+    end
+    task.wait(0.1)
+end
+
+if not Rayfield then
+    local ok, r = pcall(function() return require(14978351015) end)
+    if ok and r then Rayfield = r end
+end
+
+if not Rayfield then
+    warn("[buloHub] Rayfield не загружен")
+    Rayfield = {
+        CreateWindow = function(_, ...)
+            return {
+                CreateTab = function(_, ...)
+                    return {
+                        CreateSection     = function() end,
+                        CreateToggle      = function(_, opts)
+                            if opts and opts.Callback then
+                                pcall(function() opts.Callback(opts.CurrentValue or false) end)
+                            end
+                        end,
+                        CreateSlider      = function(_, opts)
+                            if opts and opts.Callback then
+                                pcall(function() opts.Callback(opts.CurrentValue or 0) end)
+                            end
+                        end,
+                        CreateDropdown    = function(_, opts)
+                            if opts and opts.Callback then
+                                pcall(function() opts.Callback(opts.CurrentOption or {}) end)
+                            end
+                        end,
+                        CreateButton      = function() end,
+                        CreateLabel       = function() end,
+                        CreateColorPicker = function() end,
+                    }
+                end,
+            }
+        end,
+        Notify            = function() end,
+        SaveConfiguration = function() end,
+        LoadConfiguration = function() end,
+    }
+end
+
+local Window = Rayfield:CreateWindow({
+    Name            = "bulo Hub",
+    LoadingTitle    = "Loading...",
+    LoadingSubtitle = "https://discord.gg/WZp4DZ9QZs",
+    ShowText        = "Menu",
+    Theme           = "Amethyst",
+    ToggleUIKeybind = Enum.KeyCode.RightShift,
+    ConfigurationSaving = {
+        Enabled    = true,
+        FolderName = "buloHub",
+        FileName   = "buloHub_config",
+    },
+    Discord   = {Enabled=false},
+    KeySystem = false,
+})
+
+local Tab_Info    = Window:CreateTab("Info",    "info")
+local Tab_Combat  = Window:CreateTab("Combat",  "crosshair")
+local Tab_Skins   = Window:CreateTab("Skins",   "swords")
+local Tab_Visuals = Window:CreateTab("Visuals", "eye")
+
+Tab_Info:CreateSection("Player Info")
+Tab_Info:CreateLabel("User: "     .. player.DisplayName .. " (@" .. player.Name .. ")")
+Tab_Info:CreateLabel("ID: "       .. tostring(player.UserId))
+Tab_Info:CreateLabel("Executor: " .. executorName)
+Tab_Info:CreateLabel("Device: "   .. getDeviceInfo())
+
+local Characters = Workspace:WaitForChild("Characters", 10)
+
+local function getTFolder()  return Characters and Characters:FindFirstChild("Terrorists") end
+local function getCTFolder() return Characters and Characters:FindFirstChild("Counter-Terrorists") end
+
+local function getMyTeamAndEnemy()
+    local t, ct = getTFolder(), getCTFolder()
+    if t  and t:FindFirstChild(player.Name)  then return t,  ct end
+    if ct and ct:FindFirstChild(player.Name) then return ct, t  end
+    return nil, nil
+end
+
+local function isAlive()
+    return getMyTeamAndEnemy() ~= nil
+end
+
+local function getEnemyFolder()
+    local _, ef = getMyTeamAndEnemy()
+    return ef
+end
+
+local function w2s(pos)
+    local p, vis = camera:WorldToViewportPoint(pos)
+    return Vector2.new(p.X, p.Y), vis, p.Z
+end
+
+local AntiSpreadEnabled     = false
+local SpeedBoostEnabled     = false
+local KnifeInstaKillEnabled = false
+
+local _origGetTrueSpread = nil
+local _origGetMaxSpeed   = nil
+local _origKnifeShoot    = nil
+local _antiSpreadPatched = false
+local _speedBoostPatched = false
+local _knifeInstaPatched = false
+
+local function applyAntiSpread()
+    if _antiSpreadPatched then return end
+    for _, v in pairs(getgc(true)) do
+        if type(v)=="table" and rawget(v,"getTrueSpread") and rawget(v,"_performRaycast") then
+            _origGetTrueSpread = v.getTrueSpread
+            v.getTrueSpread    = function() return 0 end
+            _antiSpreadPatched = true
+            break
+        end
+    end
+end
+
+local function removeAntiSpread()
+    if not _antiSpreadPatched then return end
+    for _, v in pairs(getgc(true)) do
+        if type(v)=="table" and rawget(v,"getTrueSpread") and rawget(v,"_performRaycast") then
+            if _origGetTrueSpread then v.getTrueSpread = _origGetTrueSpread end
+            break
+        end
+    end
+    _antiSpreadPatched = false
+    _origGetTrueSpread = nil
+end
+
+local function applySpeedBoost()
+    if _speedBoostPatched then return end
+    for _, v in pairs(getgc(true)) do
+        if type(v)=="table" and rawget(v,"GetMaxSpeed") then
+            _origGetMaxSpeed = v.GetMaxSpeed
+            v.GetMaxSpeed    = function() return 500 end
+            _speedBoostPatched = true
+            break
+        end
+    end
+end
+
+local function removeSpeedBoost()
+    if not _speedBoostPatched then return end
+    for _, v in pairs(getgc(true)) do
+        if type(v)=="table" and rawget(v,"GetMaxSpeed") then
+            if _origGetMaxSpeed then v.GetMaxSpeed = _origGetMaxSpeed end
+            break
+        end
+    end
+    _speedBoostPatched = false
+    _origGetMaxSpeed   = nil
+end
+
+local function applyKnifeInstaKill()
+    if _knifeInstaPatched then return end
+    for _, v in pairs(getgc(true)) do
+        if type(v)=="table" and rawget(v,"shoot") and rawget(v,"cancelInspect") then
+            _origKnifeShoot = v.shoot
+            v.shoot         = function(self, _) return _origKnifeShoot(self, true) end
+            _knifeInstaPatched = true
+            break
+        end
+    end
+end
+
+local function removeKnifeInstaKill()
+    if not _knifeInstaPatched then return end
+    for _, v in pairs(getgc(true)) do
+        if type(v)=="table" and rawget(v,"shoot") and rawget(v,"cancelInspect") then
+            if _origKnifeShoot then v.shoot = _origKnifeShoot end
+            break
+        end
+    end
+    _knifeInstaPatched = false
+    _origKnifeShoot    = nil
+end
+
+local _aim = {
+    enabled       = false,
+    show_fov      = false,
+    fov           = 100,
+    smoothing     = 0.5,
+    aim_part      = "Head",
+    distance_bias = 0.01,
+    always_on     = false,
+}
+local _aimbot_active = false
+local _aimbot_circle = nil
+
+UIS.InputBegan:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseButton2 then _aimbot_active = true  end
+end)
+UIS.InputEnded:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseButton2 then _aimbot_active = false end
+end)
+
+local _visRP = RaycastParams.new()
+_visRP.FilterType = Enum.RaycastFilterType.Exclude
+
+local function canSee(part)
+    local ignore = {}
+    if player.Character then table.insert(ignore, player.Character) end
+    if part.Parent      then table.insert(ignore, part.Parent)      end
+    _visRP.FilterDescendantsInstances = ignore
+    local origin = camera.CFrame.Position
+    local result = Workspace:Raycast(origin, part.Position-origin, _visRP)
+    return result == nil
+end
+
+local function UpdateAim()
+    if _drawingEnabled then
+        if not _aimbot_circle then
+            _aimbot_circle = newDrawing("Circle", {
+                Filled=false, Thickness=1,
+                Color=Color3.fromRGB(255,255,255), Transparency=0.6,
+            })
+        end
+        local mp = UIS:GetMouseLocation()
+        _aimbot_circle.Position = mp
+        _aimbot_circle.Radius   = _aim.fov
+        _aimbot_circle.Visible  = _aim.show_fov
+    end
+
+    if not _aim.enabled then return end
+    if not _aim.always_on and not _aimbot_active then return end
+    if not isAlive() then return end
+
+    local ef         = getEnemyFolder()
+    local local_char = player.Character
+    local local_pos  = local_char and local_char:GetPivot().Position
+    local mouse_pos  = UIS:GetMouseLocation()
+    local best_target, best_score = nil, math.huge
+
+    if ef then
+        for _, e in ipairs(ef:GetChildren()) do
+            local humanoid = e:FindFirstChildOfClass("Humanoid")
+            if not humanoid or humanoid.Health <= 0 then continue end
+            local part = e:FindFirstChild(_aim.aim_part) or e:FindFirstChild("Head")
+            if not part or not part:IsA("BasePart") then continue end
+            if not canSee(part) then continue end
+            local sp    = camera:WorldToViewportPoint(part.Position)
+            local sd    = (Vector2.new(sp.X,sp.Y)-mouse_pos).Magnitude
+            local wd    = local_pos and (local_pos-e:GetPivot().Position).Magnitude or 0
+            local score = sd + (wd*_aim.distance_bias)
+            if sd <= _aim.fov and score < best_score then
+                best_score  = score
+                best_target = part
+            end
+        end
+    end
+
+    if best_target then
+        local ts      = camera:WorldToViewportPoint(best_target.Position)
+        local divisor = math.max(_aim.smoothing*10, 1)
+        local dx      = (ts.X-mouse_pos.X)/divisor
+        local dy      = (ts.Y-mouse_pos.Y)/divisor
+        local moved   = false
+        if _mousemoverel then
+            local ok = pcall(_mousemoverel, dx, dy)
+            if ok then moved = true end
+        end
+        if not moved then
+            local alpha = 1 - math.clamp(_aim.smoothing, 0, 1)
+            if alpha > 0 then
+                pcall(function()
+                    camera.CFrame = camera.CFrame:Lerp(
+                        CFrame.new(camera.CFrame.Position, best_target.Position), alpha
+                    )
+                end)
+            end
+        end
+    end
+end
+
+Tab_Combat:CreateSection("Aimbot")
+Tab_Combat:CreateToggle({Name="Enable Aimbot (Hold RMB)", CurrentValue=false, Flag="AimTog",
+    Callback=function(v) _aim.enabled=v end})
+Tab_Combat:CreateToggle({Name="Show FOV Circle", CurrentValue=false, Flag="FOVTog",
+    Callback=function(v) _aim.show_fov=v end})
+Tab_Combat:CreateToggle({Name="Always On (no RMB)", CurrentValue=false, Flag="AimAlways",
+    Callback=function(v) _aim.always_on=v end})
+Tab_Combat:CreateSlider({Name="FOV Radius", Range={10,500}, Increment=10, Suffix="px", CurrentValue=100, Flag="FOVRad",
+    Callback=function(v) _aim.fov=v end})
+Tab_Combat:CreateSlider({Name="Smoothing", Range={1,10}, Increment=1, Suffix="", CurrentValue=5, Flag="AimSmth",
+    Callback=function(v) _aim.smoothing=v/10 end})
+Tab_Combat:CreateSlider({Name="Distance Bias", Range={0,10}, Increment=1, Suffix="", CurrentValue=1, Flag="AimBias",
+    Callback=function(v) _aim.distance_bias=v/100 end})
+Tab_Combat:CreateDropdown({Name="Aim Part", Options={"Head","HumanoidRootPart","UpperTorso"},
+    CurrentOption={"Head"}, Flag="AimPart",
+    Callback=function(v) _aim.aim_part=v[1] end})
+
+Tab_Combat:CreateSection("Weapon Exploits")
+Tab_Combat:CreateToggle({Name="Anti-Spread (No Spread)", CurrentValue=false, Flag="AntiSpreadTog",
+    Callback=function(v)
+        AntiSpreadEnabled = v
+        if v then applyAntiSpread() else removeAntiSpread() end
+    end})
+Tab_Combat:CreateToggle({Name="Speed Boost (GC Patch)", CurrentValue=false, Flag="SpeedBoostGCTog",
+    Callback=function(v)
+        SpeedBoostEnabled = v
+        if v then applySpeedBoost() else removeSpeedBoost() end
+    end})
+Tab_Combat:CreateToggle({Name="Knife Insta Kill", CurrentValue=false, Flag="KnifeInstaKillTog",
+    Callback=function(v)
+        KnifeInstaKillEnabled = v
+        if v then applyKnifeInstaKill() else removeKnifeInstaKill() end
+    end})
+
+local TBotEnabled = false
+local TBotDelay   = 0
+
+Tab_Combat:CreateSection("TriggerBot")
+Tab_Combat:CreateToggle({Name="Enable TriggerBot", CurrentValue=false, Flag="TBotTog",
+    Callback=function(v) TBotEnabled=v end})
+Tab_Combat:CreateSlider({Name="Shot Delay", Range={0,500}, Increment=10, Suffix="ms", CurrentValue=0, Flag="TBotDly",
+    Callback=function(v) TBotDelay=v end})
+
+task.spawn(function()
+    local rp = RaycastParams.new()
+    rp.FilterType = Enum.RaycastFilterType.Exclude
+    while task.wait(0.01) do
+        if not TBotEnabled or not isAlive() then continue end
+        local ign = {}
+        if player.Character then table.insert(ign, player.Character) end
+        rp.FilterDescendantsInstances = ign
+        local vp  = camera.ViewportSize
+        local ray = camera:ViewportPointToRay(vp.X/2, vp.Y/2)
+        local res = Workspace:Raycast(ray.Origin, ray.Direction*1000, rp)
+        if res then
+            local ef    = getEnemyFolder()
+            local model = res.Instance:FindFirstAncestorOfClass("Model")
+            if ef and model and model.Parent==ef then
+                local hum = model:FindFirstChildOfClass("Humanoid")
+                if hum and hum.Health>0 then
+                    if TBotDelay>0 then task.wait(TBotDelay/1000) end
+                    pcall(_mouse1click)
+                    task.wait(0.05)
+                end
+            end
+        end
+    end
+end)
+
+local HitboxEnabled = false
+local HitboxSize    = 3
+local origSizes     = {}
+
+Tab_Combat:CreateSection("Hitbox")
+Tab_Combat:CreateToggle({Name="Enable Hitbox", CurrentValue=false, Flag="HitTog",
+    Callback=function(v) HitboxEnabled=v end})
+Tab_Combat:CreateSlider({Name="Hitbox Size", Range={1,3}, Increment=0.1, Suffix="st", CurrentValue=3, Flag="HitSz",
+    Callback=function(v) HitboxSize=v end})
+
+task.spawn(function()
+    while task.wait(0.3) do
+        local ef = getEnemyFolder()
+        if not ef then continue end
+        for _, e in ipairs(ef:GetChildren()) do
+            local head = e:FindFirstChild("Head")
+            local hum  = e:FindFirstChildOfClass("Humanoid")
+            if head and hum and hum.Health>0 then
+                if not origSizes[head] then origSizes[head]=head.Size end
+                pcall(function()
+                    if HitboxEnabled then
+                        head.Size=Vector3.new(HitboxSize,HitboxSize,HitboxSize)
+                        head.CanCollide=false; head.Transparency=0.5
+                    elseif origSizes[head] then
+                        head.Size=origSizes[head]; head.Transparency=0
+                    end
+                end)
+            end
+        end
+    end
+end)
+
+local BhopEnabled    = false
+local SpeedEnabled   = false
+local SpeedValue     = 60
+local JumpBoostOn    = false
+local JumpBoostPower = 30
+local JUMP_Y_MAX     = 45
+local HORIZ_MAX      = 120
+local speedLV        = nil
+local speedAtt       = nil
+local _jitterPhase   = 0
+local _jitterValue   = 1.0
+local _lastHorizVel  = Vector3.zero
+local _jumpedLastFrame = false
+
+local function cleanupLV()
+    if speedLV  then pcall(function() speedLV:Destroy()  end); speedLV  = nil end
+    if speedAtt then pcall(function() speedAtt:Destroy() end); speedAtt = nil end
+end
+
+local function getOrCreateLV()
+    local char = player.Character
+    local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then cleanupLV(); return nil end
+    if speedLV and speedLV.Parent==hrp then return speedLV end
+    cleanupLV()
+    local ok, result = pcall(function()
+        local att = Instance.new("Attachment")
+        att.Name="SpeedAtt"; att.Parent=hrp; speedAtt=att
+        local lv = Instance.new("LinearVelocity")
+        lv.Name="LV_Speed"; lv.Attachment0=att; lv.MaxForce=8000
+        lv.RelativeTo=Enum.ActuatorRelativeTo.World
+        lv.VelocityConstraintMode=Enum.VelocityConstraintMode.Vector
+        lv.VectorVelocity=Vector3.zero; lv.Parent=hrp; speedLV=lv
+        return lv
+    end)
+    if not ok then return nil end
+    return result
+end
+
+local _keyDirs = {
+    [Enum.KeyCode.W] = Vector3.new( 0,0,-1),
+    [Enum.KeyCode.S] = Vector3.new( 0,0, 1),
+    [Enum.KeyCode.A] = Vector3.new(-1,0, 0),
+    [Enum.KeyCode.D] = Vector3.new( 1,0, 0),
+}
+
+local function getInputDir()
+    local dir = Vector3.zero
+    for key, vec in pairs(_keyDirs) do
+        if UIS:IsKeyDown(key) then dir=dir+vec end
+    end
+    if dir.Magnitude==0 then return Vector3.zero end
+    local look = camera.CFrame.LookVector
+    local flat  = Vector3.new(look.X,0,look.Z)
+    if flat.Magnitude<0.01 then return Vector3.zero end
+    return (CFrame.new(Vector3.zero,flat):VectorToWorldSpace(dir)).Unit
+end
+
+task.spawn(function()
+    while task.wait(0.05) do
+        if SpeedEnabled then
+            _jitterPhase = _jitterPhase+1
+            _jitterValue = 1.0+math.sin(_jitterPhase*0.25)*0.03+math.random(-2,2)*0.001
+        end
+    end
+end)
+
+player.CharacterRemoving:Connect(function() cleanupLV() end)
+player.CharacterAdded:Connect(function()    cleanupLV() end)
+
+Tab_Combat:CreateSection("Movement")
+Tab_Combat:CreateToggle({Name="Bunny Hop (Hold Space)", CurrentValue=false, Flag="BhopTog",
+    Callback=function(v) BhopEnabled=v end})
+
+Tab_Combat:CreateSection("Speed Hack")
+Tab_Combat:CreateToggle({Name="Speed Hack", CurrentValue=false, Flag="SpeedTog",
+    Callback=function(v)
+        SpeedEnabled=v
+        if not v then
+            if speedLV then pcall(function() speedLV.VectorVelocity=Vector3.zero end) end
+            task.delay(0.1, cleanupLV); _lastHorizVel=Vector3.zero
+        end
+    end})
+Tab_Combat:CreateSlider({Name="Speed Value", Range={20,160}, Increment=5, Suffix="st/s", CurrentValue=60, Flag="SpeedVal",
+    Callback=function(v) SpeedValue=v end})
+Tab_Combat:CreateSlider({Name="Max Horizontal (air)", Range={30,160}, Increment=5, Suffix="st/s", CurrentValue=120, Flag="HorizMax",
+    Callback=function(v) HORIZ_MAX=v end})
+
+Tab_Combat:CreateSection("Jump Boost")
+Tab_Combat:CreateToggle({Name="Jump Boost", CurrentValue=false, Flag="JumpBoostTog",
+    Callback=function(v) JumpBoostOn=v end})
+Tab_Combat:CreateSlider({Name="Jump Power", Range={10,60}, Increment=1, Suffix="st/s", CurrentValue=30, Flag="JumpPow",
+    Callback=function(v) JumpBoostPower=v; JUMP_Y_MAX=math.min(v*1.5,50) end})
+
+local NoclipEnabled = false
+local noclipConn    = nil
+
+local function startNoclip()
+    if noclipConn then return end
+    noclipConn = RunService.Stepped:Connect(function()
+        local char = player.Character
+        if not char then return end
+        pcall(function()
+            for _, part in ipairs(char:GetDescendants()) do
+                if part:IsA("BasePart") and part.CanCollide then part.CanCollide=false end
+            end
+        end)
+    end)
+end
+
+local function stopNoclip()
+    if noclipConn then noclipConn:Disconnect(); noclipConn=nil end
+    local char = player.Character
+    if char then
+        pcall(function()
+            for _, part in ipairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then part.CanCollide=true end
+            end
+        end)
+    end
+end
+
+Tab_Combat:CreateSection("NoClip")
+Tab_Combat:CreateToggle({Name="NoClip [RightAlt]", CurrentValue=false, Flag="NoclipTog",
+    Callback=function(v) NoclipEnabled=v; if v then startNoclip() else stopNoclip() end end})
+
+UIS.InputBegan:Connect(function(i, gpe)
+    if gpe then return end
+    if i.KeyCode==Enum.KeyCode.RightAlt then
+        NoclipEnabled=not NoclipEnabled
+        if NoclipEnabled then startNoclip() else stopNoclip() end
+    end
+end)
+
+Tab_Skins:CreateLabel("Skin changer by twistedk1d", "code", Color3.fromRGB(80,80,80), false)
+
+local scriptRunning = false
+local selectedKnife = "Butterfly Knife"
+local spawned       = false
+local inspecting    = false
+local swinging      = false
+local lastAttack    = 0
+local KNIFE_CD      = 1
+local ACT_INS       = "InspectKnifeAction"
+local ACT_ATK       = "AttackKnifeAction"
+
+pcall(function() RS.Assets.Weapons.Karambit.Camera.ViewmodelLight.Transparency=1 end)
+
+local knivesData = {
+    ["Karambit"]        = {Offset=CFrame.new(0,-1.5,1.5)},
+    ["Butterfly Knife"] = {Offset=CFrame.new(0,-1.5,1.5)},
+    ["M9 Bayonet"]      = {Offset=CFrame.new(0,-1.5,1.0)},
+    ["Flip Knife"]      = {Offset=CFrame.new(0,-1.5,1.25)},
+    ["Gut Knife"]       = {Offset=CFrame.new(0,-1.5,0.5)},
+}
+
+local vm, animator
+local eqAnim, idAnim, insAnim, hvAnim, sw1Anim, sw2Anim
+
+local function getKnifeModel()
+    return camera:FindFirstChild("T Knife") or camera:FindFirstChild("CT Knife")
+end
+
+local function cleanPart(p)
+    if not p:IsA("BasePart") then return end
+    pcall(function()
+        p.CanCollide=false; p.Anchored=false
+        p.CastShadow=false; p.CanTouch=false; p.CanQuery=false
+    end)
+end
+
+local function disableAll(m)
+    for _, p in ipairs(m:GetDescendants()) do cleanPart(p) end
+end
+
+local function hideKnife(k)
+    if not k then return end
+    pcall(function()
+        for _, p in ipairs(k:GetDescendants()) do
+            if p:IsA("BasePart") or p:IsA("MeshPart") or p:IsA("Texture") then
+                p.Transparency=1
+            end
+        end
+    end)
+end
+
+local function kSound(folder, name)
+    local ok, result = pcall(function()
+        local ws = RS.Sounds:FindFirstChild(selectedKnife)
+        if not ws then return nil end
+        local s = ws:WaitForChild(folder):WaitForChild(name):Clone()
+        s.Parent=camera; s:Play()
+        s.Ended:Once(function() s:Destroy() end)
+        return s
+    end)
+    if ok then return result end
+end
+
+local function attachAsset(folder, armN, assetN, finalN, off)
+    pcall(function()
+        local arm = vm:FindFirstChild(armN)
+        if not arm then return end
+        local mesh = folder:WaitForChild(assetN):Clone()
+        cleanPart(mesh); mesh.Name=finalN; mesh.Parent=arm
+        local m6 = Instance.new("Motor6D")
+        m6.Part0=arm; m6.Part1=mesh; m6.C0=off; m6.Parent=arm
+    end)
+end
+
+local function handleKnifeAction(action, state)
+    if state~=Enum.UserInputState.Begin then return Enum.ContextActionResult.Pass end
+    if not spawned or not animator or not isAlive() then return Enum.ContextActionResult.Pass end
+    if action==ACT_INS then
+        if (eqAnim and eqAnim.IsPlaying) or inspecting or swinging then return Enum.ContextActionResult.Pass end
+        inspecting=true
+        if idAnim then pcall(function() idAnim:Stop() end) end
+        pcall(function() insAnim:Play() end)
+        insAnim.Stopped:Once(function() inspecting=false end)
+    elseif action==ACT_ATK then
+        local now=os.clock()
+        if (eqAnim and eqAnim.IsPlaying) or now-lastAttack<KNIFE_CD then return Enum.ContextActionResult.Pass end
+        lastAttack=now
+        if inspecting then
+            inspecting=false
+            if insAnim then pcall(function() insAnim:Stop() end) end
+        end
+        swinging=true
+        if idAnim then pcall(function() idAnim:Stop() end) end
+        local pool={hvAnim,sw1Anim,sw2Anim}
+        local ch=pool[math.random(1,#pool)]
+        local sfx=ch==hvAnim and "HitOne" or ch==sw1Anim and "HitTwo" or "HitThree"
+        pcall(function() ch:Play() end)
+        local s=kSound(sfx,"1")
+        if s then pcall(function() s.Volume=5 end) end
+        ch.Stopped:Once(function() swinging=false end)
+    end
+    return Enum.ContextActionResult.Pass
+end
+
+local function removeVM()
+    spawned=false; inspecting=false; swinging=false
+    pcall(function() CAS:UnbindAction(ACT_INS) end)
+    pcall(function() CAS:UnbindAction(ACT_ATK) end)
+    if vm then pcall(function() vm:Destroy() end); vm=nil end
+    animator=nil
+end
+
+local function spawnVM(knife)
+    if spawned or not scriptRunning then return end
+    local myTeam=getMyTeamAndEnemy()
+    if not myTeam then return end
+    spawned=true
+    pcall(function()
+        local tmpl  = RS.Assets.Weapons:WaitForChild(selectedKnife)
+        local offset= knivesData[selectedKnife].Offset
+        vm          = tmpl:WaitForChild("Camera"):Clone()
+        vm.Name=selectedKnife; vm.Parent=camera
+        disableAll(vm); hideKnife(knife)
+        if myTeam.Name=="Terrorists" then
+            local tg=RS.Assets.Weapons:WaitForChild("T Glove")
+            attachAsset(tg,"Left Arm","Left Arm","Glove",CFrame.new(0,0,-1.5))
+            attachAsset(tg,"Right Arm","Right Arm","Glove",CFrame.new(0,0,-1.5))
+        else
+            local sl=RS.Assets.Sleeves:WaitForChild("IDF")
+            local cg=RS.Assets.Weapons:WaitForChild("CT Glove")
+            attachAsset(sl,"Left Arm","Left Arm","Sleeve",CFrame.new(0,0,0.5))
+            attachAsset(cg,"Left Arm","Left Arm","Glove",CFrame.new(0,0,-1.5))
+            attachAsset(sl,"Right Arm","Right Arm","Sleeve",CFrame.new(0,0,0.5))
+            attachAsset(cg,"Right Arm","Right Arm","Glove",CFrame.new(0,0,-1.5))
+        end
+        local ac=vm:FindFirstChildOfClass("AnimationController") or vm:FindFirstChildOfClass("Animator")
+        animator=ac:FindFirstChildWhichIsA("Animator") or ac
+        local af=RS.Assets.WeaponAnimations:WaitForChild(selectedKnife):WaitForChild("CameraAnimations")
+        eqAnim  = animator:LoadAnimation(af:WaitForChild("Equip"))
+        idAnim  = animator:LoadAnimation(af:WaitForChild("Idle"))
+        insAnim = animator:LoadAnimation(af:WaitForChild("Inspect"))
+        hvAnim  = animator:LoadAnimation(af:WaitForChild("Heavy Swing"))
+        sw1Anim = animator:LoadAnimation(af:WaitForChild("Swing1"))
+        sw2Anim = animator:LoadAnimation(af:WaitForChild("Swing2"))
+        vm:SetPrimaryPartCFrame(camera.CFrame*CFrame.new(0,-1.5,5))
+        TweenService:Create(vm.PrimaryPart,TweenInfo.new(0.2,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),
+            {CFrame=camera.CFrame*offset}):Play()
+        eqAnim:Play(); kSound("Equip","1")
+        CAS:BindAction(ACT_INS,handleKnifeAction,false,Enum.KeyCode.F)
+        CAS:BindAction(ACT_ATK,handleKnifeAction,false,Enum.UserInputType.MouseButton1)
+    end)
+end
+
+task.spawn(function()
+    while task.wait(0.1) do
+        local alive=isAlive(); local km=getKnifeModel()
+        if scriptRunning and alive and km and not spawned then spawnVM(km)
+        elseif (not scriptRunning or not km or not alive) and spawned then removeVM() end
+    end
+end)
+
+local SkinChangerEnabled = false
+local SelectedSkins      = {}
+local DropdownObjects    = {}
+local SkinOptions        = {}
+local WEAR = "Factory New"
+
+local CT_ONLY = {["USP-S"]=true,["Five-SeveN"]=true,["MP9"]=true,["FAMAS"]=true,["M4A1-S"]=true,["M4A4"]=true,["AUG"]=true}
+local SHARED  = {["P250"]=true,["Desert Eagle"]=true,["Dual Berettas"]=true,["Negev"]=true,["P90"]=true,["Nova"]=true,["XM1014"]=true,["AWP"]=true,["SSG 08"]=true}
+local KNIVES  = {["Karambit"]=true,["Butterfly Knife"]=true,["M9 Bayonet"]=true,["Flip Knife"]=true,["Gut Knife"]=true,["T Knife"]=true,["CT Knife"]=true}
+local GLOVES  = {["Sports Gloves"]=true}
+local IGNORE  = {["HE Grenade"]=true,["Incendiary Grenade"]=true,["Molotov"]=true,["Smoke Grenade"]=true,["Flashbang"]=true,["Decoy Grenade"]=true,["C4"]=true,["CT Glove"]=true,["T Glove"]=true}
+
+local SkinsFolder = RS:WaitForChild("Assets"):WaitForChild("Skins")
+
+local function applyWeaponSkin(model)
+    if not model or not SkinChangerEnabled or not isAlive() then return end
+    local sn=SelectedSkins[model.Name]; if not sn then return end
+    pcall(function()
+        local sf=SkinsFolder:FindFirstChild(model.Name); if not sf then return end
+        local st=sf:FindFirstChild(sn); if not st then return end
+        local src=st:FindFirstChild("Camera") and st.Camera:FindFirstChild(WEAR)
+        if not src then return end
+        for _, obj in ipairs(camera:GetChildren()) do
+            if obj:FindFirstChild("Left Arm") or obj:FindFirstChild("Right Arm") then
+                local gf=SkinsFolder:FindFirstChild("Sports Gloves")
+                local gs=gf and gf:FindFirstChild(SelectedSkins["Sports Gloves"])
+                local gsrc=gs and gs:FindFirstChild("Camera") and gs.Camera:FindFirstChild(WEAR)
+                if gsrc then
+                    for _, side in ipairs({"Left Arm","Right Arm"}) do
+                        local arm=obj:FindFirstChild(side)
+                        local asrc=gsrc:FindFirstChild(side)
+                        if arm and asrc then
+                            local gm=arm:FindFirstChild("Glove")
+                            if gm then
+                                local ex=gm:FindFirstChildOfClass("SurfaceAppearance")
+                                if ex then ex:Destroy() end
+                                local cl=asrc:Clone(); cl.Name="SurfaceAppearance"; cl.Parent=gm
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        if not GLOVES[model.Name] then
+            local wf=model:FindFirstChild("Weapon")
+            if wf then
+                for _, part in ipairs(wf:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        local ns=src:FindFirstChild(part.Name)
+                        if ns then
+                            local ex=part:FindFirstChildOfClass("SurfaceAppearance")
+                            if ex then ex:Destroy() end
+                            local cl=ns:Clone(); cl.Name="SurfaceAppearance"; cl.Parent=part
+                        end
+                    end
+                end
+            end
+        end
+        model:SetAttribute("SkinApplied",sn)
+    end)
+end
+
+Tab_Skins:CreateToggle({Name="Enable Skin Changer", CurrentValue=false, Flag="SkinTog",
+    Callback=function(v)
+        SkinChangerEnabled=v
+        if not v then
+            pcall(function()
+                for _, o in ipairs(camera:GetChildren()) do o:SetAttribute("SkinApplied",nil) end
+            end)
+        end
+    end})
+
+Tab_Skins:CreateButton({Name="🎲 Randomize All Skins", Callback=function()
+    for wn, opts in pairs(SkinOptions) do
+        if #opts>0 then
+            local r=opts[math.random(1,#opts)]
+            if DropdownObjects[wn] then
+                for _, dp in ipairs(DropdownObjects[wn]) do pcall(function() dp:Set({r}) end) end
+            end
+        end
+    end
+end})
+
+local function makeSkinDD(wn)
+    local f=SkinsFolder:FindFirstChild(wn); if not f then return end
+    local opts={}
+    for _, s in ipairs(f:GetChildren()) do table.insert(opts,s.Name) end
+    SkinOptions[wn]=opts; if #opts==0 then return end
+    if not SelectedSkins[wn] then SelectedSkins[wn]=opts[1] end
+    local dp=Tab_Skins:CreateDropdown({
+        Name=wn, Options=opts, CurrentOption={SelectedSkins[wn]}, Flag="Skin"..wn,
+        Callback=function(opt)
+            SelectedSkins[wn]=opt[1]
+            pcall(function()
+                for _, o in ipairs(camera:GetChildren()) do
+                    o:SetAttribute("SkinApplied",nil); applyWeaponSkin(o)
+                end
+            end)
+        end})
+    DropdownObjects[wn]=DropdownObjects[wn] or {}
+    table.insert(DropdownObjects[wn],dp)
+end
+
+Tab_Skins:CreateToggle({Name="Enable Custom Knife", CurrentValue=false, Flag="KnifeTog",
+    Callback=function(v) scriptRunning=v; if not v then removeVM() end end})
+Tab_Skins:CreateDropdown({Name="Custom Knife",
+    Options={"Butterfly Knife","Karambit","M9 Bayonet","Flip Knife","Gut Knife"},
+    CurrentOption={"Butterfly Knife"}, Flag="KnifeSelect",
+    Callback=function(o) selectedKnife=o[1]; if spawned then removeVM() end end})
+
+Tab_Skins:CreateSection("Knife Skins");    for n in pairs(KNIVES)  do makeSkinDD(n) end
+Tab_Skins:CreateSection("Gloves");         for n in pairs(GLOVES)  do makeSkinDD(n) end
+Tab_Skins:CreateSection("CT Weapons");     for n in pairs(CT_ONLY) do makeSkinDD(n) end
+Tab_Skins:CreateSection("Shared Weapons"); for n in pairs(SHARED)  do makeSkinDD(n) end
+for _, f in ipairs(SkinsFolder:GetChildren()) do
+    local n=f.Name
+    if not IGNORE[n] and not KNIVES[n] and not GLOVES[n] and not CT_ONLY[n] and not SHARED[n] then
+        makeSkinDD(n)
+    end
+end
+
+camera.ChildAdded:Connect(function(o)
+    if SkinChangerEnabled and isAlive() then task.wait(0.1); applyWeaponSkin(o) end
+end)
+
+task.spawn(function()
+    while task.wait(0.5) do
+        if SkinChangerEnabled and isAlive() then
+            pcall(function()
+                for _, o in ipairs(camera:GetChildren()) do
+                    if SelectedSkins[o.Name] and o:GetAttribute("SkinApplied")~=SelectedSkins[o.Name] then
+                        applyWeaponSkin(o)
+                    end
+                end
+            end)
+        end
+    end
+end)
+
+local ESP = {
+    Enabled=false, ShowHealthBar=true,
+    ShowName=true, ShowDistance=true,
+    TextSize=14,   BoxThickness=2,
+    MaxDistance=5000, HealthBarWidth=4,
+    BoxColor=Color3.fromRGB(220,50,50),
+    TextColor=Color3.fromRGB(255,255,255),
+}
+local ESPObjects = {}
+
+local function GetHealthColor(hp, mhp)
+    local pct=math.clamp(hp/mhp,0,1)
+    return Color3.new(math.clamp(2*(1-pct),0,1),math.clamp(2*pct,0,1),0)
+end
+
+local function createESPObject()
+    local o={}
+    o.BoxOL = newDrawing("Square",{Filled=false,Color=Color3.new(0,0,0),Thickness=3,Visible=false})
+    o.Box   = newDrawing("Square",{Filled=false,Thickness=2,Visible=false})
+    o.Name  = newDrawing("Text",{Center=true,Outline=true,Size=14,Color=Color3.fromRGB(255,255,255),Visible=false})
+    o.Dist  = newDrawing("Text",{Center=true,Outline=true,Size=12,Color=Color3.fromRGB(180,180,180),Visible=false})
+    o.HpBg  = newDrawing("Square",{Filled=true,Color=Color3.fromRGB(20,20,20),Transparency=0.4,Visible=false})
+    o.HpOL  = newDrawing("Square",{Filled=false,Color=Color3.new(0,0,0),Thickness=1,Visible=false})
+    o.HpBar = newDrawing("Square",{Filled=true,Transparency=0.2,Visible=false})
+    o.HpTxt = newDrawing("Text",{Center=true,Outline=true,Size=9,Visible=false})
+    return o
+end
+
+local function hideESPObject(o)
+    for _, d in pairs(o) do pcall(function() d.Visible=false end) end
+end
+
+local function destroyESPObject(o)
+    for _, d in pairs(o) do pcall(function() d:Remove() end) end
+end
+
+task.spawn(function()
+    while task.wait(1) do
+        for enemy, obj in pairs(ESPObjects) do
+            if not enemy.Parent then destroyESPObject(obj); ESPObjects[enemy]=nil end
+        end
+    end
+end)
+
+local CH = {
+    Players=false, PColor=Color3.fromRGB(255,0,255), PFill=0.7, POutline=0.0,
+    Weapons=false, WColor=Color3.fromRGB(0,255,255),  WFill=0.5, WOutline=0.0,
+    Rainbow=false, RSpd=2,
+}
+local chamsCache  = {}
+local wchamsCache = {}
+
+local function rbw(spd) return Color3.fromHSV((tick()*spd)%1,1,1) end
+
+task.spawn(function()
+    while task.wait(0.05) do
+        pcall(function()
+            if CH.Players then
+                local ef  = getEnemyFolder()
+                local col = CH.Rainbow and rbw(CH.RSpd) or CH.PColor
+                if ef then
+                    for _, enemy in ipairs(ef:GetChildren()) do
+                        local hum=enemy:FindFirstChildOfClass("Humanoid")
+                        if hum and hum.Health>0 then
+                            if not chamsCache[enemy] then
+                                local hl=Instance.new("Highlight")
+                                hl.Adornee=enemy; hl.Parent=enemy
+                                hl.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop
+                                chamsCache[enemy]=hl
+                            end
+                            local hl=chamsCache[enemy]
+                            hl.FillColor=col; hl.OutlineColor=col
+                            hl.FillTransparency=CH.PFill; hl.OutlineTransparency=CH.POutline
+                        end
+                    end
+                end
+            end
+            for model, hl in pairs(chamsCache) do
+                local hum=model:FindFirstChildOfClass("Humanoid")
+                if not model.Parent or (hum and hum.Health<=0) or not CH.Players then
+                    hl:Destroy(); chamsCache[model]=nil
+                end
+            end
+            if CH.Weapons then
+                local wcol=CH.Rainbow and rbw(CH.RSpd) or CH.WColor
+                for _, obj in ipairs(camera:GetChildren()) do
+                    if obj:IsA("Model") and (obj.Name:find("Knife") or obj:FindFirstChild("Weapon")) then
+                        if not wchamsCache[obj] then
+                            local hl=Instance.new("Highlight")
+                            hl.Adornee=obj; hl.Parent=obj
+                            hl.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop
+                            wchamsCache[obj]=hl
+                        end
+                        local hl=wchamsCache[obj]
+                        hl.FillColor=wcol; hl.OutlineColor=wcol
+                        hl.FillTransparency=CH.WFill; hl.OutlineTransparency=CH.WOutline
+                    end
+                end
+            else
+                for obj, hl in pairs(wchamsCache) do hl:Destroy(); wchamsCache[obj]=nil end
+            end
+            for obj, hl in pairs(wchamsCache) do
+                if not obj.Parent then hl:Destroy(); wchamsCache[obj]=nil end
+            end
+        end)
+    end
+end)
+
+local KE = {On=false, Color=Color3.fromRGB(255,0,100), Duration=0.8}
+local keGui = nil
+
+local function doKillFX()
+    if not KE.On then return end
+    pcall(function()
+        if not keGui then
+            keGui=Instance.new("ScreenGui")
+            keGui.ResetOnSpawn=false; keGui.Parent=player:WaitForChild("PlayerGui")
+            local f=Instance.new("Frame")
+            f.Size=UDim2.new(1,0,1,0); f.BackgroundColor3=KE.Color
+            f.BackgroundTransparency=1; f.BorderSizePixel=0; f.Parent=keGui; keGui.Frame=f
+        end
+        local f=keGui.Frame
+        f.BackgroundColor3=KE.Color; f.BackgroundTransparency=0.15
+        TweenService:Create(f,TweenInfo.new(KE.Duration,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),
+            {BackgroundTransparency=1}):Play()
+        local lbl=Instance.new("TextLabel")
+        lbl.Size=UDim2.new(0,300,0,80); lbl.Position=UDim2.new(0.5,-150,0.42,0)
+        lbl.BackgroundTransparency=1; lbl.Text="KILL"; lbl.TextColor3=KE.Color
+        lbl.TextScaled=true; lbl.Font=Enum.Font.GothamBold
+        lbl.TextStrokeTransparency=0; lbl.TextStrokeColor3=Color3.new(0,0,0)
+        lbl.Parent=player.PlayerGui
+        TweenService:Create(lbl,TweenInfo.new(KE.Duration*0.7,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),
+            {Position=UDim2.new(0.5,-150,0.28,0),TextTransparency=1}):Play()
+        task.delay(KE.Duration,function() if lbl and lbl.Parent then lbl:Destroy() end end)
+    end)
+end
+
+task.spawn(function()
+    local lastHp={}
+    while task.wait(0.1) do
+        if not KE.On then continue end
+        local ef=getEnemyFolder(); if not ef then continue end
+        pcall(function()
+            for _, e in ipairs(ef:GetChildren()) do
+                local hum=e:FindFirstChildOfClass("Humanoid")
+                if hum then
+                    if lastHp[e] and lastHp[e]>0 and hum.Health<=0 then doKillFX() end
+                    lastHp[e]=hum.Health
+                end
+            end
+        end)
+    end
+end)
+
+RunService.RenderStepped:Connect(function(dt)
+    pcall(UpdateAim)
+
+    local char = player.Character
+    local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+    local hum  = char and char:FindFirstChildOfClass("Humanoid")
+
+    pcall(function()
+        if BhopEnabled and isAlive() and hum and hrp then
+            if UIS:IsKeyDown(Enum.KeyCode.Space) then
+                local st     = hum:GetState()
+                local curVel = hrp.AssemblyLinearVelocity
+                if st~=Enum.HumanoidStateType.Jumping
+                and st~=Enum.HumanoidStateType.Freefall
+                and curVel.Y<=1 then
+                    hum.Jump=true
+                end
+            end
+        end
+    end)
+
+    pcall(function()
+        if SpeedEnabled and isAlive() and hrp and hum then
+            local lv       = getOrCreateLV()
+            local dir      = getInputDir()
+            local curVel   = hrp.AssemblyLinearVelocity
+            local curY     = curVel.Y
+            local humState = hum:GetState()
+            local inAir    = humState==Enum.HumanoidStateType.Freefall or humState==Enum.HumanoidStateType.Jumping
+            local rawSpd   = SpeedValue*_jitterValue
+            local horizSpd = inAir and math.min(rawSpd,HORIZ_MAX) or rawSpd
+            if lv then
+                if dir.Magnitude>0 then
+                    lv.VectorVelocity=Vector3.new(dir.X*horizSpd,curY,dir.Z*horizSpd)
+                    _lastHorizVel=Vector3.new(dir.X*horizSpd,0,dir.Z*horizSpd)
+                else
+                    local brake=inAir and 0.93 or 0.7
+                    _lastHorizVel=_lastHorizVel*brake
+                    if _lastHorizVel.Magnitude<0.5 then _lastHorizVel=Vector3.zero end
+                    lv.VectorVelocity=Vector3.new(_lastHorizVel.X,curY,_lastHorizVel.Z)
+                end
+            end
+            if JumpBoostOn then
+                local justJumped=humState==Enum.HumanoidStateType.Jumping
+                if justJumped and not _jumpedLastFrame then
+                    local safeY=math.min(math.max(curY,0)+JumpBoostPower,JUMP_Y_MAX)
+                    pcall(function() hrp.AssemblyLinearVelocity=Vector3.new(curVel.X,safeY,curVel.Z) end)
+                end
+                if curVel.Y>JUMP_Y_MAX then
+                    pcall(function() hrp.AssemblyLinearVelocity=Vector3.new(curVel.X,JUMP_Y_MAX,curVel.Z) end)
+                end
+                _jumpedLastFrame=justJumped
+            else
+                _jumpedLastFrame=false
+            end
+        elseif not SpeedEnabled then
+            if speedLV then
+                pcall(function() speedLV.VectorVelocity=Vector3.zero end)
+                task.delay(0.05,cleanupLV)
+            end
+            _lastHorizVel=Vector3.zero; _jumpedLastFrame=false
+        end
+    end)
+
+    pcall(function()
+        if scriptRunning and vm and vm.PrimaryPart then
+            vm.PrimaryPart.CFrame=camera.CFrame*knivesData[selectedKnife].Offset
+            if not (eqAnim and eqAnim.IsPlaying) and not inspecting and not swinging then
+                if idAnim and not idAnim.IsPlaying then idAnim:Play() end
+            end
+        end
+    end)
+
+    pcall(function()
+        local ef=getEnemyFolder()
+        if not ESP.Enabled or not isAlive() or not ef then
+            for _, obj in pairs(ESPObjects) do hideESPObject(obj) end
+            return
+        end
+        for enemy, obj in pairs(ESPObjects) do
+            if not enemy.Parent or enemy.Parent~=ef then hideESPObject(obj) end
+        end
+        for _, enemy in ipairs(ef:GetChildren()) do
+            local ehum  = enemy:FindFirstChildOfClass("Humanoid")
+            local ehrp  = enemy:FindFirstChild("HumanoidRootPart")
+            local ehead = enemy:FindFirstChild("Head")
+            if not ehum or not ehrp or not ehead or ehum.Health<=0 then
+                if ESPObjects[enemy] then hideESPObject(ESPObjects[enemy]) end; continue
+            end
+            if not ESPObjects[enemy] then ESPObjects[enemy]=createESPObject() end
+            local obj  = ESPObjects[enemy]
+            local dist = (camera.CFrame.Position-ehrp.Position).Magnitude
+            if dist>ESP.MaxDistance then hideESPObject(obj); continue end
+            local sHead,onScreen = w2s(ehead.Position+Vector3.new(0,ehead.Size.Y/2+0.1,0))
+            local sFeet          = w2s(ehrp.Position-Vector3.new(0,3,0))
+            local sRoot          = w2s(ehrp.Position)
+            if not onScreen then hideESPObject(obj); continue end
+            local bH=math.max(12,math.abs(sFeet.Y-sHead.Y)*1.05)
+            local bW=math.max(6, bH*0.45)
+            local bX=sRoot.X-bW/2; local bY=sHead.Y-2
+            local hp=ehum.Health; local mhp=ehum.MaxHealth
+            local pct=math.clamp(hp/mhp,0,1)
+            pcall(function()
+                obj.BoxOL.Position=Vector2.new(bX-1,bY-1); obj.BoxOL.Size=Vector2.new(bW+2,bH+2)
+                obj.BoxOL.Thickness=ESP.BoxThickness+1;    obj.BoxOL.Visible=true
+                obj.Box.Position=Vector2.new(bX,bY);       obj.Box.Size=Vector2.new(bW,bH)
+                obj.Box.Color=ESP.BoxColor; obj.Box.Thickness=ESP.BoxThickness; obj.Box.Visible=true
+                if ESP.ShowName then
+                    obj.Name.Text=enemy.Name; obj.Name.Size=ESP.TextSize; obj.Name.Color=ESP.TextColor
+                    obj.Name.Position=Vector2.new(sRoot.X,bY-ESP.TextSize-2); obj.Name.Visible=true
+                else obj.Name.Visible=false end
+                if ESP.ShowDistance then
+                    obj.Dist.Text=string.format("[%dm]",math.floor(dist/3.5))
+                    obj.Dist.Size=math.max(8,ESP.TextSize-2)
+                    obj.Dist.Position=Vector2.new(sRoot.X,bY+bH+3); obj.Dist.Visible=true
+                else obj.Dist.Visible=false end
+                if ESP.ShowHealthBar then
+                    local bw=ESP.HealthBarWidth; local barX=bX-bw-3
+                    local fillH=math.max(1,bH*pct); local hpCol=GetHealthColor(hp,mhp)
+                    obj.HpBg.Position=Vector2.new(barX,bY);     obj.HpBg.Size=Vector2.new(bw,bH);     obj.HpBg.Visible=true
+                    obj.HpOL.Position=Vector2.new(barX-1,bY-1); obj.HpOL.Size=Vector2.new(bw+2,bH+2); obj.HpOL.Visible=true
+                    obj.HpBar.Position=Vector2.new(barX,bY+bH-fillH); obj.HpBar.Size=Vector2.new(bw,fillH)
+                    obj.HpBar.Color=hpCol; obj.HpBar.Visible=true
+                    if pct<1 then
+                        obj.HpTxt.Text=tostring(math.floor(hp))
+                        obj.HpTxt.Position=Vector2.new(barX+bw/2,bY+bH-fillH-11)
+                        obj.HpTxt.Color=hpCol; obj.HpTxt.Visible=true
+                    else obj.HpTxt.Visible=false end
+                else
+                    obj.HpBg.Visible=false; obj.HpOL.Visible=false
+                    obj.HpBar.Visible=false; obj.HpTxt.Visible=false
+                end
+            end)
+        end
+    end)
+end)
+
+Tab_Visuals:CreateSection("ESP")
+Tab_Visuals:CreateToggle({Name="Enable ESP",CurrentValue=false,Flag="ESP_On",
+    Callback=function(v) ESP.Enabled=v end})
+Tab_Visuals:CreateToggle({Name="Show Name",CurrentValue=true,Flag="ESP_Name",
+    Callback=function(v) ESP.ShowName=v end})
+Tab_Visuals:CreateToggle({Name="Show Distance",CurrentValue=true,Flag="ESP_Dist",
+    Callback=function(v) ESP.ShowDistance=v end})
+Tab_Visuals:CreateToggle({Name="Show Health Bar",CurrentValue=true,Flag="ESP_HP",
+    Callback=function(v) ESP.ShowHealthBar=v end})
+Tab_Visuals:CreateSlider({Name="Text Size",Range={8,24},Increment=1,Suffix="",CurrentValue=14,Flag="ESP_TxtSz",
+    Callback=function(v) ESP.TextSize=v end})
+Tab_Visuals:CreateSlider({Name="Box Thickness",Range={1,5},Increment=0.5,Suffix="",CurrentValue=2,Flag="ESP_Thick",
+    Callback=function(v) ESP.BoxThickness=v end})
+Tab_Visuals:CreateSlider({Name="HP Bar Width",Range={2,10},Increment=1,Suffix="px",CurrentValue=4,Flag="ESP_HPW",
+    Callback=function(v) ESP.HealthBarWidth=v end})
+Tab_Visuals:CreateSlider({Name="Max Distance",Range={100,5000},Increment=100,Suffix="st",CurrentValue=5000,Flag="ESP_MaxD",
+    Callback=function(v) ESP.MaxDistance=v end})
+Tab_Visuals:CreateColorPicker({Name="Box Color",Color=Color3.fromRGB(220,50,50),Flag="ESP_Col",
+    Callback=function(v) ESP.BoxColor=v end})
+Tab_Visuals:CreateColorPicker({Name="Text Color",Color=Color3.fromRGB(255,255,255),Flag="ESP_TxtCol",
+    Callback=function(v) ESP.TextColor=v end})
+
+Tab_Visuals:CreateSection("Chams — Players")
+Tab_Visuals:CreateToggle({Name="Enemy Chams",CurrentValue=false,Flag="CH_P",
+    Callback=function(v) CH.Players=v end})
+Tab_Visuals:CreateColorPicker({Name="Color",Color=Color3.fromRGB(255,0,255),Flag="CH_PC",
+    Callback=function(v) CH.PColor=v end})
+Tab_Visuals:CreateSlider({Name="Fill Transparency",Range={0,1},Increment=0.05,Suffix="",CurrentValue=0.7,Flag="CH_PF",
+    Callback=function(v) CH.PFill=v end})
+Tab_Visuals:CreateSlider({Name="Outline Transparency",Range={0,1},Increment=0.05,Suffix="",CurrentValue=0,Flag="CH_PO",
+    Callback=function(v) CH.POutline=v end})
+
+Tab_Visuals:CreateSection("Chams — Weapons")
+Tab_Visuals:CreateToggle({Name="Weapon Chams",CurrentValue=false,Flag="CH_W",
+    Callback=function(v) CH.Weapons=v end})
+Tab_Visuals:CreateColorPicker({Name="Color",Color=Color3.fromRGB(0,255,255),Flag="CH_WC",
+    Callback=function(v) CH.WColor=v end})
+Tab_Visuals:CreateSlider({Name="Fill Transparency",Range={0,1},Increment=0.05,Suffix="",CurrentValue=0.5,Flag="CH_WF",
+    Callback=function(v) CH.WFill=v end})
+Tab_Visuals:CreateSlider({Name="Outline Transparency",Range={0,1},Increment=0.05,Suffix="",CurrentValue=0,Flag="CH_WO",
+    Callback=function(v) CH.WOutline=v end})
+
+Tab_Visuals:CreateSection("Chams — Rainbow")
+Tab_Visuals:CreateToggle({Name="Rainbow Chams",CurrentValue=false,Flag="CH_RB",
+    Callback=function(v) CH.Rainbow=v end})
+Tab_Visuals:CreateSlider({Name="Rainbow Speed",Range={0.1,10},Increment=0.1,Suffix="",CurrentValue=2,Flag="CH_RBSpd",
+    Callback=function(v) CH.RSpd=v end})
+
+Tab_Visuals:CreateSection("Kill Effects")
+Tab_Visuals:CreateToggle({Name="Enable Kill Effects",CurrentValue=false,Flag="KE_On",
+    Callback=function(v) KE.On=v end})
+Tab_Visuals:CreateColorPicker({Name="Effect Color",Color=Color3.fromRGB(255,0,100),Flag="KE_Col",
+    Callback=function(v) KE.Color=v end})
+Tab_Visuals:CreateSlider({Name="Duration",Range={0.3,2},Increment=0.1,Suffix="s",CurrentValue=0.8,Flag="KE_Dur",
+    Callback=function(v) KE.Duration=v end})
+
+Tab_Visuals:CreateSection("World")
+local AntiFlash = false
+local AntiSmoke = false
+Tab_Visuals:CreateToggle({Name="Anti-Flashbang",CurrentValue=false,Flag="AntiFlash",
+    Callback=function(v) AntiFlash=v end})
+Tab_Visuals:CreateToggle({Name="Anti-Smoke",CurrentValue=false,Flag="AntiSmoke",
+    Callback=function(v) AntiSmoke=v end})
+
+task.spawn(function()
+    while task.wait(0.25) do
+        pcall(function()
+            if AntiFlash then
+                local g=player.PlayerGui:FindFirstChild("FlashbangEffect")
+                local e=Lighting:FindFirstChild("FlashbangColorCorrection")
+                if g then g:Destroy() end; if e then e:Destroy() end
+            end
+            if AntiSmoke then
+                local d=Workspace:FindFirstChild("Debris")
+                if d then
+                    for _, f in ipairs(d:GetChildren()) do
+                        if f.Name:match("Voxel") then f:ClearAllChildren(); f:Destroy() end
+                    end
+                end
+            end
+        end)
+    end
+end)
+
+Tab_Visuals:CreateSection("Config")
+Tab_Visuals:CreateButton({Name="💾 Save Config", Callback=function()
+    pcall(function() Rayfield:SaveConfiguration() end)
+    pcall(function() Rayfield:Notify({Title="Saved",Content="Configuration saved!",Duration=3}) end)
+end})
+Tab_Visuals:CreateButton({Name="📂 Load Config", Callback=function()
+    pcall(function() Rayfield:LoadConfiguration() end)
+    pcall(function() Rayfield:Notify({Title="Loaded",Content="Configuration loaded!",Duration=3}) end)
+end})
+
+pcall(function() Rayfield:LoadConfiguration() end)

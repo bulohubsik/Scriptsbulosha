@@ -1,0 +1,716 @@
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+local Window = Rayfield:CreateWindow({
+Name = "Xenon Hub x Salat Hub",
+LoadingTitle = "Loading...",
+LoadingSubtitle = "by Xenon Hub x Salat Hub",
+ConfigurationSaving = { Enabled = false },
+Discord = { Enabled = false },
+KeySystem = false,
+Theme = "Default"
+})
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService = game:GetService("HttpService")
+local UIS = game:GetService("UserInputService")
+local Player = Players.LocalPlayer
+local connections = {}
+local lastFired = {}
+local genCache = {}
+local lastGenScan = 0
+local lastESPUpdate = 0
+local itemListenerConn = nil
+local Cfg = { Noclip = false, Jump = true, Stamina = false, Fullbright = false, AntiSlow = false, AutoGen = false, AntiEffects = true, TeleSpeed = false }
+local GEN_COOLDOWN = 1.2
+local TRANSITION_TIME = 0.3
+local boostHumanoid = nil
+local boostCurrentSpeed = 16
+local boostTargetSpeed = 16
+local boostBaseSpeed = 16
+local boosting = false
+
+-- TELEPORT SPEEDHACK SETTINGS
+local TeleStep = 0.3
+local TeleRayDist = 3
+local TeleMovementKeys = { Enum.KeyCode.LeftShift, Enum.KeyCode.RightShift }
+local TeleCharacter, TeleRoot, TeleHum
+
+local function setupTeleCharacter(char)
+    TeleCharacter = char
+    TeleRoot = char:WaitForChild("HumanoidRootPart")
+    TeleHum = char:WaitForChild("Humanoid")
+end
+if Player.Character then setupTeleCharacter(Player.Character) end
+Player.CharacterAdded:Connect(setupTeleCharacter)
+
+RunService.Heartbeat:Connect(function()
+    if not Cfg.TeleSpeed then return end
+    if not TeleRoot or not TeleHum or TeleHum.Health <= 0 then return end
+
+    local moveKeyDown = false
+    for _, key in ipairs(TeleMovementKeys) do
+        if UIS:IsKeyDown(key) then moveKeyDown = true; break end
+    end
+    if not moveKeyDown then return end
+
+    local moveDir = TeleHum.MoveDirection
+    if moveDir.Magnitude > 0.1 then
+        local rayOrigin = TeleRoot.Position
+        local rayDirection = moveDir * TeleRayDist
+        local hit = Workspace:Raycast(rayOrigin, rayDirection)
+
+        local distance = TeleStep
+        if hit then
+            distance = math.min(TeleStep, (hit.Position - rayOrigin).Magnitude - 1.5)
+            if distance < 0 then distance = 0 end
+        end
+
+        if distance > 0 then
+            TeleRoot.CFrame = TeleRoot.CFrame + moveDir * distance
+        end
+    end
+end)
+
+local ESPSettings = {
+Survivors = false,
+Killers = true,
+Items = false,
+Generators = true,
+MaxDistance = 500
+}
+local ESPColors = {
+Survivor = Color3.new(0.15, 1, 0),
+Killer = Color3.new(1, 0, 0),
+Item = Color3.fromRGB(255, 220, 0),
+Generator = Color3.new(1, 0.9, 0),
+GeneratorDone = Color3.new(0, 0.5, 0)
+}
+local ITEM_NAMES = { "Medkit", "BloxyCola", "FakeMedkit", "FakeBloxyCola", "GreenKey", "Bloxiade", "Epicsauce", "Flashlight" }
+local ItemESPObjects = {}
+local function isItemTarget(name)
+for _, n in ipairs(ITEM_NAMES) do if n == name then return true end end
+return false
+end
+local ESPIndicator = {}
+ESPIndicator.__index = ESPIndicator
+ESPIndicator.Groups = {}
+ESPIndicator.TargetIndex = {}
+ESPIndicator.Defaults = {
+AccentColor = Color3.new(1,1,0),
+HighlightFillTransparency = 0.7,
+HighlightOutlineTransparency = 0,
+HighlightDepthMode = Enum.HighlightDepthMode.AlwaysOnTop,
+Parent = game:GetService("CoreGui")
+}
+function ESPIndicator.new(o)
+local s = setmetatable({}, ESPIndicator)
+s.Settings = {}
+for k, v in pairs(ESPIndicator.Defaults) do
+s.Settings[k] = (o and o[k] ~= nil) and o[k] or v
+end
+local p = s.Settings.Parent or Player:WaitForChild("PlayerGui")
+s.ScreenGui = Instance.new("ScreenGui")
+s.ScreenGui.Name = "ESPIndicators"
+s.ScreenGui.IgnoreGuiInset = true
+s.ScreenGui.ResetOnSpawn = false
+s.ScreenGui.Parent = p
+s.Indicators = {}
+return s
+end
+function ESPIndicator:AddGroup(n)
+local g = ESPIndicator.Groups[n]
+if not g then g = {enabled = true, properties = {}, targets = {}}; ESPIndicator.Groups[n] = g end
+return g
+end
+function ESPIndicator:RemoveGroup(n)
+local g = ESPIndicator.Groups[n]
+if not g then return false end
+for _, t in ipairs(g.targets) do
+local idx = ESPIndicator.TargetIndex[t]
+if idx then
+for i, nm in ipairs(idx) do if nm == n then table.remove(idx, i); break end end
+if #idx == 0 then ESPIndicator.TargetIndex[t] = nil end
+end
+if not ESPIndicator.TargetIndex[t] then self:Remove(t) end
+end
+ESPIndicator.Groups[n] = nil
+return true
+end
+function ESPIndicator:ClearAllGroups()
+for n in pairs(ESPIndicator.Groups) do self:RemoveGroup(n) end
+end
+function ESPIndicator:Add(target, opts)
+assert(target)
+opts = opts or {}
+local hl = Instance.new("Highlight")
+hl.Name = "HL_" .. HttpService:GenerateGUID(false)
+hl.Adornee = target
+hl.FillTransparency = opts.HighlightFillTransparency or self.Settings.HighlightFillTransparency
+hl.FillColor = opts.AccentColor or self.Settings.AccentColor
+hl.OutlineColor = opts.AccentColor or self.Settings.AccentColor
+hl.OutlineTransparency = opts.HighlightOutlineTransparency or self.Settings.HighlightOutlineTransparency
+hl.DepthMode = opts.HighlightDepthMode or self.Settings.HighlightDepthMode
+hl.Parent = self.ScreenGui
+self.Indicators[target] = { Highlight = hl, Options = opts }
+local gn = opts.GroupName
+if gn then self:AddToGroup(target, gn) end
+end
+function ESPIndicator:Remove(t)
+local ind = self.Indicators[t]
+if not ind then return end
+if ind.Highlight then ind.Highlight.Adornee = nil; ind.Highlight:Destroy() end
+if ind.HPGui then
+pcall(function() ind.HPGui:Destroy() end)
+end
+local idx = ESPIndicator.TargetIndex[t]
+if idx then
+for _, gn in ipairs(idx) do
+local g = ESPIndicator.Groups[gn]
+if g then
+for i, tt in ipairs(g.targets) do if tt == t then table.remove(g.targets, i); break end end
+end
+end
+ESPIndicator.TargetIndex[t] = nil
+end
+self.Indicators[t] = nil
+end
+function ESPIndicator:AddToGroup(t, gn)
+local g = self:AddGroup(gn)
+if not table.find(g.targets, t) then table.insert(g.targets, t) end
+local idx = ESPIndicator.TargetIndex[t]
+if not idx then idx = {}; ESPIndicator.TargetIndex[t] = idx end
+if not table.find(idx, gn) then table.insert(idx, gn) end
+return true
+end
+function ESPIndicator:Destroy()
+self:ClearAllGroups()
+for _, ind in pairs(self.Indicators) do
+if ind.Highlight then ind.Highlight:Destroy() end
+if ind.HPGui then pcall(function() ind.HPGui:Destroy() end) end
+end
+self.ScreenGui:Destroy()
+self.Indicators = {}
+end
+local espContainer = ESPIndicator.new({Parent = Player:WaitForChild("PlayerGui")})
+local function addSurvivor(ch)
+if ch == Player.Character then return end
+espContainer:Add(ch, {AccentColor = ESPColors.Survivor, GroupName = "survivors"})
+local ind = espContainer.Indicators[ch]
+if not ind then return end
+local hum = ch:FindFirstChildOfClass("Humanoid")
+if not hum then return end
+local head = ch:FindFirstChild("Head") or ch.PrimaryPart or ch:FindFirstChild("HumanoidRootPart")
+if not head then return end
+local bg = Instance.new("BillboardGui")
+bg.Name = "HPGui"
+bg.Size = UDim2.new(0, 100, 0, 30)
+bg.StudsOffset = Vector3.new(0, 2.5, 0)
+bg.AlwaysOnTop = true
+bg.Adornee = head
+bg.Parent = ch
+local lbl = Instance.new("TextLabel")
+lbl.Size = UDim2.new(1, 0, 1, 0)
+lbl.BackgroundTransparency = 1
+lbl.TextColor3 = ESPColors.Survivor
+lbl.TextStrokeTransparency = 0
+lbl.TextStrokeColor3 = Color3.new(0, 0, 0)
+lbl.Font = Enum.Font.GothamBold
+lbl.TextSize = 16
+lbl.Text = "HP: " .. math.floor(hum.Health)
+lbl.Parent = bg
+ind.HPGui = bg
+ind.HPLabel = lbl
+local conn
+conn = hum.HealthChanged:Connect(function(newHealth)
+if not ind or not ind.HPLabel then
+conn:Disconnect()
+return
+end
+ind.HPLabel.Text = "HP: " .. math.floor(newHealth)
+end)
+end
+local function addKiller(ch)
+if ch == Player.Character then return end
+espContainer:Add(ch, {AccentColor = ESPColors.Killer, GroupName = "killers"})
+local ind = espContainer.Indicators[ch]
+if not ind then return end
+local hum = ch:FindFirstChildOfClass("Humanoid")
+if not hum then return end
+local head = ch:FindFirstChild("Head") or ch.PrimaryPart or ch:FindFirstChild("HumanoidRootPart")
+if not head then return end
+local bg = Instance.new("BillboardGui")
+bg.Name = "HPGui"
+bg.Size = UDim2.new(0, 100, 0, 30)
+bg.StudsOffset = Vector3.new(0, 2.5, 0)
+bg.AlwaysOnTop = true
+bg.Adornee = head
+bg.Parent = ch
+local lbl = Instance.new("TextLabel")
+lbl.Size = UDim2.new(1, 0, 1, 0)
+lbl.BackgroundTransparency = 1
+lbl.TextColor3 = ESPColors.Killer
+lbl.TextStrokeTransparency = 0
+lbl.TextStrokeColor3 = Color3.new(0, 0, 0)
+lbl.Font = Enum.Font.GothamBold
+lbl.TextSize = 16
+lbl.Text = "HP: " .. math.floor(hum.Health)
+lbl.Parent = bg
+ind.HPGui = bg
+ind.HPLabel = lbl
+local conn
+conn = hum.HealthChanged:Connect(function(newHealth)
+if not ind or not ind.HPLabel then
+conn:Disconnect()
+return
+end
+ind.HPLabel.Text = "HP: " .. math.floor(newHealth)
+end)
+end
+local function addGenerator(g)
+local progVal = g:FindFirstChild("Progress")
+local progress = (progVal and progVal.Value) or 0
+local done = progress >= 100
+espContainer:Add(g, {
+AccentColor = done and ESPColors.GeneratorDone or ESPColors.Generator,
+GroupName = "generators"
+})
+if progVal then
+progVal.Changed:Connect(function()
+espContainer:Remove(g)
+addGenerator(g)
+end)
+end
+end
+local function createItemESP(model)
+if ItemESPObjects[model] then return end
+local hl = Instance.new("Highlight")
+hl.FillTransparency = 1
+hl.OutlineTransparency = 0
+hl.OutlineColor = ESPColors.Item
+hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+hl.Adornee = model
+hl.Parent = model
+local root = model:FindFirstChildOfClass("BasePart") or model:FindFirstChildOfClass("MeshPart") or model
+local bb = Instance.new("BillboardGui")
+bb.Size = UDim2.new(0, 120, 0, 36)
+bb.StudsOffset = Vector3.new(0, 2.5, 0)
+bb.AlwaysOnTop = true
+bb.Parent = root
+local lbl = Instance.new("TextLabel")
+lbl.Size = UDim2.new(1, 0, 1, 0)
+lbl.BackgroundTransparency = 1
+lbl.TextColor3 = ESPColors.Item
+lbl.TextStrokeTransparency = 0
+lbl.TextStrokeColor3 = Color3.new(0, 0, 0)
+lbl.Font = Enum.Font.GothamBold
+lbl.TextSize = 13
+lbl.Text = model.Name
+lbl.Parent = bb
+ItemESPObjects[model] = { hl = hl, bb = bb, lbl = lbl, root = root }
+end
+local function removeItemESP(model)
+local e = ItemESPObjects[model]
+if e then
+pcall(function() e.hl:Destroy() end)
+pcall(function() e.bb:Destroy() end)
+ItemESPObjects[model] = nil
+end
+end
+local function updateItemESP()
+local char = Player.Character
+local hrp = char and char:FindFirstChild("HumanoidRootPart")
+for model, e in pairs(ItemESPObjects) do
+if not model or not model.Parent then
+removeItemESP(model)
+elseif hrp then
+local ok, dist = pcall(function()
+local p = e.root
+if p and p:IsA("BasePart") then
+return math.floor((hrp.Position - p.Position).Magnitude)
+end
+return 999
+end)
+if ok and dist then
+if dist > ESPSettings.MaxDistance then
+e.hl.Enabled = false
+e.bb.Enabled = false
+else
+e.hl.Enabled = true
+e.bb.Enabled = true
+e.lbl.Text = model.Name .. "\n" .. dist .. "m"
+end
+end
+end
+end
+end
+local function startItemESPListener()
+if itemListenerConn then itemListenerConn:Disconnect() end
+itemListenerConn = Workspace.DescendantAdded:Connect(function(obj)
+if not ESPSettings.Items then return end
+task.delay(0.1, function()
+if not obj or not obj.Parent then return end
+if (obj:IsA("Tool") or obj:IsA("Folder")) and isItemTarget(obj.Name) then
+if not obj.Parent:IsA("Backpack") and not ItemESPObjects[obj] then
+createItemESP(obj)
+end
+end
+end)
+end)
+end
+local function onItemESPToggle(value)
+ESPSettings.Items = value
+if value then
+for _, obj in ipairs(Workspace:GetDescendants()) do
+if (obj:IsA("Tool") or obj:IsA("Folder")) and isItemTarget(obj.Name) then
+if not obj.Parent:IsA("Backpack") and not ItemESPObjects[obj] then
+createItemESP(obj)
+end
+end
+end
+startItemESPListener()
+else
+if itemListenerConn then
+itemListenerConn:Disconnect()
+itemListenerConn = nil
+end
+for obj, _ in pairs(ItemESPObjects) do
+removeItemESP(obj)
+end
+end
+end
+local function scanPlayers()
+local survivors = Workspace.Players and Workspace.Players:FindFirstChild("Survivors")
+local killers = Workspace.Players and Workspace.Players:FindFirstChild("Killers")
+if survivors and ESPSettings.Survivors then
+for _, ch in ipairs(survivors:GetChildren()) do
+if ch:IsA("Model") and ch ~= Player.Character and not espContainer.Indicators[ch] then
+addSurvivor(ch)
+end
+end
+end
+if killers and ESPSettings.Killers then
+for _, ch in ipairs(killers:GetChildren()) do
+if ch:IsA("Model") and ch ~= Player.Character and not espContainer.Indicators[ch] then
+addKiller(ch)
+end
+end
+end
+end
+local function scanGenerators()
+if not ESPSettings.Generators then return end
+local ingame = Workspace:FindFirstChild("Map") and Workspace.Map:FindFirstChild("Ingame")
+if not ingame then return end
+local map = ingame:FindFirstChild("Map")
+if not map then return end
+for _, gen in ipairs(map:GetChildren()) do
+if gen.Name == "Generator" and gen:IsA("Model") and not espContainer.Indicators[gen] then
+addGenerator(gen)
+end
+end
+end
+RunService.Heartbeat:Connect(function()
+local now = tick()
+if now - lastESPUpdate < 0.3 then return end
+lastESPUpdate = now
+local char = Player.Character
+local hrp = char and char:FindFirstChild("HumanoidRootPart")
+if not hrp then return end
+local cam = Workspace.CurrentCamera
+if not cam then return end
+local camPos = cam.CFrame.Position
+for obj, ind in pairs(espContainer.Indicators) do
+if not obj or not obj.Parent then
+espContainer:Remove(obj)
+continue
+end
+local pos = nil
+pcall(function()
+if obj:IsA("Model") then
+local p = obj.PrimaryPart or obj:FindFirstChild("HumanoidRootPart")
+if p then pos = p.Position end
+elseif obj:IsA("BasePart") then
+pos = obj.Position
+end
+end)
+if not pos then continue end
+local dist = (camPos - pos).Magnitude
+local inRange = dist <= ESPSettings.MaxDistance
+if ind.Highlight and ind.Highlight.Enabled ~= inRange then ind.Highlight.Enabled = inRange end
+if ind.HPGui then ind.HPGui.Enabled = inRange end
+end
+if ESPSettings.Items then updateItemESP() end
+end)
+Workspace.DescendantAdded:Connect(function(obj)
+task.delay(0.5, function()
+if not obj or not obj.Parent then return end
+if ESPSettings.Generators and obj:IsA("Model") and obj.Name == "Generator" then
+if not espContainer.Indicators[obj] then addGenerator(obj) end
+end
+if ESPSettings.Survivors and obj:IsA("Model") and obj ~= Player.Character then
+local s = Workspace.Players and Workspace.Players:FindFirstChild("Survivors")
+if s and obj.Parent == s and not espContainer.Indicators[obj] then addSurvivor(obj) end
+end
+if ESPSettings.Killers and obj:IsA("Model") and obj ~= Player.Character then
+local k = Workspace.Players and Workspace.Players:FindFirstChild("Killers")
+if k and obj.Parent == k and not espContainer.Indicators[obj] then addKiller(obj) end
+end
+end)
+end)
+Workspace.DescendantRemoving:Connect(function(obj)
+espContainer:Remove(obj)
+if ItemESPObjects[obj] then removeItemESP(obj) end
+end)
+local function cleanLighting()
+for _, effect in pairs(Lighting:GetChildren()) do
+if effect:IsA("ColorCorrectionEffect") then
+if effect.Name == "HealthDesaturation" or effect.Contrast > 1 or effect.TintColor ~= Color3.new(1,1,1) then
+pcall(function() effect:Destroy() end)
+end
+end
+end
+end
+local function cleanUI()
+local playerGui = Player:FindFirstChild("PlayerGui")
+if not playerGui then return end
+local tempUI = playerGui:FindFirstChild("TemporaryUI")
+if tempUI then
+local flash = tempUI:FindFirstChild("redFlash")
+local vignette = tempUI:FindFirstChild("injuredVignette")
+if flash then pcall(function() flash:Destroy() end) end
+if vignette then pcall(function() vignette:Destroy() end) end
+end
+end
+local function runAntiEffectsLoop()
+RunService:UnbindFromRenderStep("ShakeyCamera")
+cleanLighting()
+cleanUI()
+end
+local function toggleAntiEffects(state)
+Cfg.AntiEffects = state
+if connections.antiEffects then
+connections.antiEffects:Disconnect()
+connections.antiEffects = nil
+end
+if state then
+connections.antiEffects = RunService.Heartbeat:Connect(runAntiEffectsLoop)
+pcall(function()
+local dataHandler = require(ReplicatedStorage.Modules.Data.DataHandler)
+if dataHandler then
+local settings = dataHandler:Get()
+if settings and settings.Settings and settings.Settings.Customization then
+settings.Settings.Customization.DynamicCamSway.Value = 0
+settings.Settings.Customization.ScreenShakeEnabled.Value = false
+settings.Settings.Customization.ScreenShakeOnLow.Value = false
+settings.Settings.Customization.InjuredVignette.Value = false
+settings.Settings.Customization.ScreenDesaturation.Value = false
+end
+end
+end)
+end
+end
+local function getHRP()
+local c = Player.Character
+if c then return c:FindFirstChild("HumanoidRootPart") end
+end
+local function updateGenCache()
+local now = tick()
+if now - lastGenScan < 2 then return end
+lastGenScan = now
+table.clear(genCache)
+local ingame = Workspace:FindFirstChild("Map") and Workspace.Map:FindFirstChild("Ingame")
+if not ingame then return end
+local map = ingame:FindFirstChild("Map")
+if not map then return end
+for _, gen in ipairs(map:GetChildren()) do
+if gen.Name == "Generator" and gen:IsA("Model") and not gen:GetFullName():find("Lobby") then
+local main = gen:FindFirstChild("Main")
+if main then table.insert(genCache, { Model=gen, Main=main }) end
+end
+end
+end
+local function getNearestGenerator()
+updateGenCache()
+local hrp = getHRP()
+if not hrp then return nil, 999 end
+local nearest, nearestDist = nil, math.huge
+for _, data in ipairs(genCache) do
+local gen, main = data.Model, data.Main
+local prog = gen:FindFirstChild("Progress") or gen:FindFirstChildWhichIsA("NumberValue")
+if prog and prog.Value >= 100 then continue end
+local d = (hrp.Position - main.Position).Magnitude
+if d < nearestDist then nearestDist = d; nearest = gen end
+end
+return nearest, nearestDist
+end
+local function fireNearest()
+local hrp = getHRP()
+if not hrp then return end
+local gen, d = getNearestGenerator()
+if not gen or d > 15 then return end
+local now = tick()
+local last = lastFired[gen] or 0
+if now - last < GEN_COOLDOWN then return end
+local rem = gen:FindFirstChild("Remotes")
+if not rem then return end
+local re = rem:FindFirstChild("RE")
+if not re then return end
+lastFired[gen] = now
+pcall(function() re:FireServer() end)
+end
+local function toggleAutoGen(state)
+Cfg.AutoGen = state
+if connections.autogen then connections.autogen:Disconnect(); connections.autogen = nil end
+if state then connections.autogen = RunService.Heartbeat:Connect(fireNearest) end
+end
+local function toggleNoClip(state)
+Cfg.Noclip = state
+if connections.noclip then connections.noclip:Disconnect(); connections.noclip = nil end
+if state then
+connections.noclip = RunService.Heartbeat:Connect(function()
+local c = Player.Character
+if not c then return end
+for _, p in ipairs(c:GetDescendants()) do
+if p:IsA("BasePart") and not p.Anchored then p.CanCollide = false end
+end
+end)
+else
+local c = Player.Character
+if c then
+for _, p in ipairs(c:GetDescendants()) do
+if p:IsA("BasePart") and not p.Anchored then p.CanCollide = true end
+end
+end
+end
+end
+local function toggleJumpUnlock(state)
+Cfg.Jump = state
+local c = Player.Character
+if c then
+local h = c:FindFirstChildOfClass("Humanoid")
+if h then h.UseJumpPower = true; h.JumpPower = 50 end
+end
+end
+local function toggleStamina(state)
+Cfg.Stamina = state
+if connections.stamina then connections.stamina:Disconnect(); connections.stamina = nil end
+local mod
+pcall(function() mod = require(ReplicatedStorage.Systems.Character.Game.Sprinting) end)
+if state and mod then
+connections.stamina = RunService.Heartbeat:Connect(function()
+pcall(function()
+mod.StaminaLossDisabled = true
+mod.Stamina = mod.MaxStamina or 100
+mod.CanSprint = true
+end)
+end)
+elseif mod then
+pcall(function() mod.StaminaLossDisabled = false end)
+end
+end
+local origLight = {
+B = Lighting.Brightness,
+A = Lighting.Ambient,
+OA = Lighting.OutdoorAmbient,
+GS = Lighting.GlobalShadows,
+FE = Lighting.FogEnd,
+FS = Lighting.FogStart
+}
+local function toggleFullbright(state)
+Cfg.Fullbright = state
+if connections.fullbright then connections.fullbright:Disconnect(); connections.fullbright = nil end
+if state then
+connections.fullbright = RunService.Heartbeat:Connect(function()
+Lighting.Brightness = 3
+Lighting.Ambient = Color3.new(1,1,1)
+Lighting.OutdoorAmbient = Color3.new(1,1,1)
+Lighting.FogEnd = 100000
+Lighting.FogStart = 0
+end)
+else
+Lighting.Brightness = origLight.B
+Lighting.Ambient = origLight.A
+Lighting.OutdoorAmbient = origLight.OA
+Lighting.GlobalShadows = origLight.GS
+Lighting.FogEnd = origLight.FE
+Lighting.FogStart = origLight.FS
+end
+end
+local AntiDebuff = {Enabled = true}
+function AntiDebuff:Start()
+self.Enabled = true
+task.spawn(function()
+while self.Enabled do
+local char = Player.Character
+if char then
+local hum = char:FindFirstChild("Humanoid")
+if hum and hum.WalkSpeed < 16 then hum.WalkSpeed = 16 end
+for _, child in ipairs(char:GetChildren()) do
+local nameLower = child.Name:lower()
+if nameLower:match("slow") or nameLower:match("debuff") then child:Destroy() end
+end
+local mults = char:FindFirstChild("SpeedMultipliers")
+if mults then
+for _, mult in ipairs(mults:GetChildren()) do
+if mult:IsA("NumberValue") and mult.Value < 1 then mult.Value = 1 end
+end
+end
+end
+task.wait(0.5)
+end
+end)
+end
+function AntiDebuff:Stop()
+self.Enabled = false
+end
+local function toggleAntiSlow(state)
+Cfg.AntiSlow = state
+if state then AntiDebuff:Start() else AntiDebuff:Stop() end
+end
+Player.CharacterAdded:Connect(function(char)
+task.wait(0.5)
+if Cfg.Jump then toggleJumpUnlock(true) end
+if Cfg.Noclip then toggleNoClip(true) end
+if Cfg.AntiSlow then AntiDebuff:Start() end
+end)
+task.wait(0.5)
+local MainTab = Window:CreateTab("Main", 4483362458)
+MainTab:CreateSection("ESP Highlights")
+MainTab:CreateToggle({Name = "Generators ESP", CurrentValue = true, Callback = function(v)
+ESPSettings.Generators = v
+if v then task.defer(scanGenerators) else espContainer:RemoveGroup("generators") end
+end})
+MainTab:CreateToggle({Name = "Killer ESP", CurrentValue = true, Callback = function(v)
+ESPSettings.Killers = v
+if v then task.defer(scanPlayers) else espContainer:RemoveGroup("killers") end
+end})
+MainTab:CreateToggle({Name = "Player ESP", CurrentValue = false, Callback = function(v)
+ESPSettings.Survivors = v
+if v then task.defer(scanPlayers) else espContainer:RemoveGroup("survivors") end
+end})
+MainTab:CreateToggle({Name = "Item ESP", CurrentValue = false, Callback = onItemESPToggle})
+MainTab:CreateSection("Movement")
+MainTab:CreateToggle({Name = "Jump Unlocker", CurrentValue = true, Callback = function(v) toggleJumpUnlock(v) end})
+MainTab:CreateToggle({Name = "NoClip", CurrentValue = false, Callback = function(v) toggleNoClip(v) end})
+MainTab:CreateToggle({Name = "Speed", CurrentValue = false, Callback = function(v) Cfg.TeleSpeed = v end})
+MainTab:CreateSlider({
+Name = "Speed",
+Range = {0.05, 5.0},
+Increment = 0.05,
+Suffix = " studs",
+CurrentValue = 0.3,
+Callback = function(v) TeleStep = v end
+})
+MainTab:CreateSection("Detectables")
+MainTab:CreateToggle({Name = "Infinite Stamina", CurrentValue = false, Callback = function(v) toggleStamina(v) end})
+MainTab:CreateSection("Utility")
+MainTab:CreateToggle({Name = "Fullbright", CurrentValue = false, Callback = function(v) toggleFullbright(v) end})
+MainTab:CreateToggle({Name = "Anti-Slow", CurrentValue = false, Callback = function(v) toggleAntiSlow(v) end})
+MainTab:CreateToggle({Name = "Fix cam", CurrentValue = true, Callback = function(v) toggleAntiEffects(v) end})
+MainTab:CreateSection("Tools")
+MainTab:CreateToggle({Name = "Auto Generator", CurrentValue = false, Callback = function(v) toggleAutoGen(v) end})
+
+toggleAntiEffects(true)
+task.defer(scanPlayers)
+print("маму ебал разрабов форчан")
